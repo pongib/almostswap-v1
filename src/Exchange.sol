@@ -2,18 +2,21 @@
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 error Exchange__NotAllowAddressZero();
 error Exchange__InputOrOutputReserveBelowZero();
 error Exchange__BelowZeroAmount(uint256 amount);
 error Exchange__ExceedSlipageTolerance();
 error Exchange__TransferETHFail();
+error Exchange__InputTokenAsLiquidityToLow();
+error Exchange__InputLPBelowZero();
 
-contract Exchange {
+contract Exchange is ERC20 {
     address public s_tokenAddress;
 
     // it have only one token because v1 allowed only eth <-> token
-    constructor(address tokenAddress) {
+    constructor(address tokenAddress) ERC20("ALMOST V1 LP", "A-V1-LP") {
         if (tokenAddress == address(0)) {
             revert Exchange__NotAllowAddressZero();
         }
@@ -21,9 +24,60 @@ contract Exchange {
         s_tokenAddress = tokenAddress;
     }
 
-    function addLiquidity(uint256 amount) public payable {
-        IERC20 token = IERC20(s_tokenAddress);
-        token.transferFrom(msg.sender, address(this), amount);
+    function addLiquidity(uint256 amount) public payable returns (uint256) {
+        if (getReserve() == 0) {
+            IERC20 token = IERC20(s_tokenAddress);
+            token.transferFrom(msg.sender, address(this), amount);
+
+            // LP stuff
+            uint256 liquidity = address(this).balance;
+            _mint(msg.sender, liquidity);
+            return liquidity;
+        } else {
+            // we can control only token amount
+            // so calculated porpotion from it.
+            uint256 ethReserve = address(this).balance - msg.value;
+            uint256 tokenReserve = getReserve();
+            uint256 tokenToReceive = (tokenReserve * msg.value) / ethReserve;
+            if (tokenToReceive < amount) {
+                revert Exchange__InputTokenAsLiquidityToLow();
+            }
+            IERC20(s_tokenAddress).transferFrom(
+                msg.sender,
+                address(this),
+                tokenToReceive
+            );
+
+            uint256 liquidity = (totalSupply() * msg.value) / ethReserve;
+            _mint(msg.sender, liquidity);
+            return liquidity;
+        }
+    }
+
+    function removeLiquidity(uint256 liquidityAmount)
+        public
+        returns (uint256, uint256)
+    {
+        if (liquidityAmount <= 0) {
+            revert Exchange__InputLPBelowZero();
+        }
+        uint256 ethReserve = address(this).balance;
+        uint256 returnEthAmount = (ethReserve * liquidityAmount) /
+            totalSupply();
+        uint256 tokenReserve = getReserve();
+        // uint256 returnTokenAmount = (returnEthAmount * tokenReserve) /
+        //     ethReserve;
+
+        // use ratio as eth return
+        uint256 returnTokenAmount = (tokenReserve * liquidityAmount) /
+            totalSupply();
+        _burn(msg.sender, liquidityAmount);
+        (bool success, ) = address(msg.sender).call{value: returnEthAmount}("");
+        if (!success) {
+            revert Exchange__TransferETHFail();
+        }
+        IERC20(s_tokenAddress).transfer(msg.sender, returnTokenAmount);
+        return (returnEthAmount, returnTokenAmount);
     }
 
     function ethToTokenSwap(uint256 minAmountToReceive) external payable {
@@ -65,7 +119,7 @@ contract Exchange {
             address(this),
             tokenSoldAmount
         );
-        (bool success, ) = address(this).call{value: ethBoughtAmount}("");
+        (bool success, ) = address(msg.sender).call{value: ethBoughtAmount}("");
         if (!success) {
             revert Exchange__TransferETHFail();
         }
@@ -84,7 +138,11 @@ contract Exchange {
             revert Exchange__InputOrOutputReserveBelowZero();
         }
 
-        return (outputReserve * inputAmount) / (inputReserve + inputAmount);
+        uint256 inputAmountWithFee = inputAmount * 99;
+        uint256 numerator = outputReserve * inputAmountWithFee;
+        uint256 denominator = (inputReserve * 100) + inputAmountWithFee;
+
+        return numerator / denominator;
     }
 
     function getEthAmount(uint256 tokenSoldAmount)

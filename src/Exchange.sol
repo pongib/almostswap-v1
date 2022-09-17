@@ -3,7 +3,9 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "forge-std/console.sol";
 
+error TestRevert();
 error Exchange__NotAllowAddressZero();
 error Exchange__InputOrOutputReserveBelowZero();
 error Exchange__BelowZeroAmount(uint256 amount);
@@ -13,7 +15,8 @@ error Exchange__InputTokenAsLiquidityToLow();
 error Exchange__InputLPBelowZero();
 
 contract Exchange is ERC20 {
-    address public s_tokenAddress;
+    address private s_tokenAddress;
+    address private s_factoryAddress;
 
     // it have only one token because v1 allowed only eth <-> token
     constructor(address tokenAddress) ERC20("ALMOST V1 LP", "A-V1-LP") {
@@ -22,6 +25,7 @@ contract Exchange is ERC20 {
         }
 
         s_tokenAddress = tokenAddress;
+        s_factoryAddress = msg.sender;
     }
 
     function addLiquidity(uint256 amount) public payable returns (uint256) {
@@ -39,9 +43,11 @@ contract Exchange is ERC20 {
             uint256 ethReserve = address(this).balance - msg.value;
             uint256 tokenReserve = getReserve();
             uint256 tokenToReceive = (tokenReserve * msg.value) / ethReserve;
-            if (tokenToReceive < amount) {
+            if (tokenToReceive > amount) {
                 revert Exchange__InputTokenAsLiquidityToLow();
             }
+            // test foundry vm.expectRevert
+            // require(tokenToReceive <= amount, "xxx");
             IERC20(s_tokenAddress).transferFrom(
                 msg.sender,
                 address(this),

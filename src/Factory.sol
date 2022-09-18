@@ -12,7 +12,7 @@ error Factory__ExchangeAlreadyCreated(
 contract Factory {
     mapping(address => address) private s_tokenToExchange;
 
-    function createExchange(uint256 tokenAddress) public returns (address) {
+    function createExchange(address tokenAddress) public returns (address) {
         if (tokenAddress == address(0)) {
             revert Factory__InputZeroAddress();
         }

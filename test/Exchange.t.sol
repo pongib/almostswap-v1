@@ -6,14 +6,26 @@ import "forge-std/console.sol";
 import "../src/Exchange.sol";
 import "../src/Token.sol";
 
+import "../src/Factory.sol";
+
 contract ExchangeTest is Test {
     Token public token;
     Exchange public exchange;
+    Exchange public exchangeA;
+    Exchange public exchangeB;
+    Factory public factory;
+    Token public tokenA;
+    Token public tokenB;
 
     function setUp() public {
         uint256 amount = 1000000 ether;
         token = new Token("PONG", "PNG", amount);
         exchange = new Exchange(address(token));
+        factory = new Factory();
+        tokenA = new Token("TOKEN-A", "TKA", amount);
+        tokenB = new Token("TOKEN-B", "TKB", amount);
+        exchangeA = Exchange(factory.createExchange(address(tokenA)));
+        exchangeB = Exchange(factory.createExchange(address(tokenB)));
     }
 
     // function testAddLiquidity() public {
@@ -89,4 +101,6 @@ contract ExchangeTest is Test {
         );
         exchange.addLiquidity{value: 50 ether}(50 ether);
     }
+
+    function testTokenToTokenSwap() public {}
 }
